@@ -1,0 +1,107 @@
+# E-Governance Platform - Docker Compose
+# Run: docker compose up --build
+
+services:
+  api-gateway:
+    build: ./services/api-gateway
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - CITIZEN_SERVICE_URL=http://citizen-service:8001
+      - NOTIFICATION_SERVICE_URL=http://notification-service:8002
+      - DOCUMENT_SERVICE_URL=http://document-service:8003
+      - JWT_SECRET_KEY=change-this-secret-key-in-production
+    depends_on:
+      - citizen-service
+      - notification-service
+      - document-service
+    networks:
+      - egov-net
+
+  document-service:
+    build: ./services/document-service
+    restart: unless-stopped
+    expose:
+      - "8003"
+    environment:
+      - STORAGE_PATH=/app/uploads
+    volumes:
+      - document_uploads:/app/uploads
+    networks:
+      - egov-net
+
+  citizen-service:
+    build: ./services/citizen-service
+    restart: unless-stopped
+    expose:
+      - "8001"
+    env_file:
+      - .env
+    environment:
+      - LOG_LEVEL=INFO
+      - NOTIFICATION_SERVICE_URL=http://notification-service:8002
+      - DATABASE_URL=postgresql+asyncpg://egov:egov_secret@postgres:5432/egov
+      - REDIS_URL=redis://redis:6379/1
+      - JWT_SECRET_KEY=change-this-secret-key-in-production
+      # Email (set in .env to enable status-change and welcome emails)
+      - SMTP_HOST=${SMTP_HOST:-}
+      - SMTP_PORT=${SMTP_PORT:-587}
+      - SMTP_USER=${SMTP_USER:-}
+      - SMTP_PASSWORD=${SMTP_PASSWORD:-}
+      - EMAIL_FROM=${EMAIL_FROM:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    networks:
+      - egov-net
+
+  postgres:
+    image: postgres:15-alpine
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=egov
+      - POSTGRES_PASSWORD=egov_secret
+      - POSTGRES_DB=egov
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U egov -d egov"]
+      interval: 3s
+      timeout: 3s
+      retries: 5
+    networks:
+      - egov-net
+
+  notification-service:
+    build: ./services/notification-service
+    restart: unless-stopped
+    expose:
+      - "8002"
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+      - LOG_LEVEL=INFO
+    depends_on:
+      - redis
+    networks:
+      - egov-net
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    networks:
+      - egov-net
+
+networks:
+  egov-net:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  document_uploads:
