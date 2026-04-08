@@ -1,2 +1,2 @@
 # E-Governance-platform
-Majaor project
+Major project
